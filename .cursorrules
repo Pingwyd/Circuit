@@ -1,0 +1,39 @@
+# Cursor Rules — Fortnite Tournament Tracker
+
+You are building a Fortnite TOURNAMENT tracker. Follow MASTER-EXECUTION-PLAN.md task by task,
+in order. phase1-build-spec.md is the source of truth for DDL, the Osirion adapter, and the scheduler.
+
+## Always-on invariants (never violate — stop and ask if a task seems to require it)
+1. SNAPSHOT-FIRST: every successful leaderboard poll writes leaderboard_snapshots (append-only,
+   INSERT ... ON CONFLICT DO NOTHING on (lb_event_id, lb_window_id, page, source_updated_at)).
+   This table is load-bearing and unreconstructable. Never skip or overwrite it.
+2. NO UPSTREAM FROM THE BROWSER: the Next.js client only calls our FastAPI. Only the backend
+   calls Osirion (https://fnapi.osirion.gg). No frontend code may reference that host.
+3. RATE LIMITS at 90% ceilings: account 45/min, leaderboard 54/min, default 90/min. Every
+   Osirion call goes through the shared RateLimiter. Never bypass it.
+4. TIERED POLLING: live-window top pages frequently (~60-90s); deep pages lazy/on-demand;
+   full backfill only when a window closes. Never brute-force every page every cycle.
+5. BETA TOLERANCE: 30s timeouts + 3-attempt backoff on every call. One failure logs and the
+   poll cycle continues — never crashes.
+6. IDEMPOTENT INGESTION: upserts + unique constraints. Re-running a sync never duplicates rows.
+7. PHASE 1 SCOPE ONLY: no Epic/official API, no OAuth, no paid Osirion replay API,
+   no damage/drops/movement stats, no auth. Leave clean seams; don't implement them.
+
+## Stack (do not substitute without asking)
+- Backend: Python 3.12, uv, FastAPI, httpx (async), SQLAlchemy 2.0 async + asyncpg, Alembic,
+  APScheduler (AsyncIOScheduler), pydantic-settings, ruff, pytest + pytest-asyncio + respx.
+- DB: PostgreSQL 16 (docker compose).
+- Frontend: Next.js App Router + TypeScript + Tailwind; ISR for pages; TanStack Query for
+  live-leaderboard polling.
+
+## Conventions
+- All timestamps TIMESTAMPTZ in UTC; parse Osirion ISO strings to UTC on ingest.
+- Store raw upstream sub-objects as JSONB (display_data, entries, scoring_rules, trackedStats).
+- Type hints + Pydantic models for every Osirion response shape.
+- Secrets in .env only; NEXT_PUBLIC_API_BASE_URL is the only frontend env; no upstream keys client-side.
+
+## Working protocol
+- One task at a time. Don't start the next until the current task's "Done when" checks pass.
+- Run verification commands and show output before moving on.
+- Commit per task with the task ID (e.g. "M4-T1: leaderboard poll + snapshot writer").
+- Never run drop/truncate except against the local dev DB when a task explicitly says to.
