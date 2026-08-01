@@ -9,6 +9,18 @@ TournamentRegion = Literal[
     "OCE", "ASIA", "ME", "EU", "BR", "NAC", "NAE", "NAW", "ONSITE"
 ]
 
+ALL_TOURNAMENT_REGIONS: tuple[TournamentRegion, ...] = (
+    "OCE",
+    "ASIA",
+    "ME",
+    "EU",
+    "BR",
+    "NAC",
+    "NAE",
+    "NAW",
+    "ONSITE",
+)
+
 
 class TournamentsDataDisplayData(BaseModel):
     model_config = _OsirionConfig

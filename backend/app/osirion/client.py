@@ -77,3 +77,6 @@ class OsirionClient:
         if platform:
             params["platform"] = platform
         return await self._get("/v1/accounts/lookup-by-display-name", "account", params)
+
+    async def aclose(self) -> None:
+        await self._c.aclose()
