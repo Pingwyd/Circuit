@@ -7,8 +7,8 @@ from app.models import LeaderboardSnapshot
 from app.osirion.client import OsirionClient
 from app.osirion.ingest import poll_leaderboard
 
-LB_EVENT_ID = "test_lb_event"
-LB_WINDOW_ID = "test_lb_window"
+LB_EVENT_ID = "test_lb_event_dedupe"
+LB_WINDOW_ID = "test_lb_window_dedupe"
 
 
 def _leaderboard_payload(updated_at: str) -> dict:
