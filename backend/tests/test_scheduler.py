@@ -117,6 +117,23 @@ async def test_poll_failure_does_not_abort_cycle():
 
 
 @pytest.mark.asyncio
+async def test_fetch_window_targets_failure_does_not_abort_cycle():
+    scheduler = PollScheduler()
+    scheduler._push_job(PollKey("lb1", "win1", 0), JobPriority.HIGH)
+
+    poll_mock = AsyncMock(return_value=_poll_result())
+    with patch("app.scheduler.poll_leaderboard", poll_mock):
+        with patch.object(
+            scheduler,
+            "_fetch_window_targets",
+            AsyncMock(side_effect=RuntimeError("db down")),
+        ):
+            await scheduler._cycle()
+
+    assert poll_mock.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_scheduler_start_and_stop():
     scheduler = PollScheduler()
     scheduler.start()

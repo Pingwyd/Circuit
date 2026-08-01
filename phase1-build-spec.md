@@ -223,3 +223,29 @@ Search `players` by username prefix. Falls back to `lookup_by_name` through the 
 ### `GET /players/{account_id}/placements`
 
 Cross-tournament placement history from `leaderboard_entry_players`.
+
+---
+
+## 7. Observability
+
+Structured instrumentation for production scheduler trust. No polling behavior changes.
+
+### Osirion call logging
+
+Every upstream HTTP attempt logs: `endpoint`, `bucket`, `page` (when present), `latency_ms`, `bucket_count` (rolling 60s window), `bucket_ceiling`, and `attempt`. Failures log as `osirion_call_failed` with the same fields plus `error`.
+
+### `GET /admin/metrics`
+
+Operational snapshot from real DB and in-process limiters:
+
+- `liveMainWindows`: main score locations whose parent window is live now
+- `snapshotsLastHour`: rows appended to `leaderboard_snapshots` in the last hour
+- `rateLimits`: per-bucket `count`, `ceiling`, and `utilization` (scheduler + API clients merged)
+- `lastTournamentSync`: timestamp of the last successful catalog refresh, or null
+
+### Failure isolation
+
+- Each poll job runs inside try/except; one bad leaderboard logs and the drain continues.
+- Tournament sync failures log and the cycle continues.
+- Window-target query failures log and enqueue is skipped for that cycle only.
+- Every 60s the scheduler logs per-bucket rate-limit utilization from the shared client limiters.

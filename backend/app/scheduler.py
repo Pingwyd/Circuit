@@ -74,6 +74,10 @@ class PollScheduler:
     def client(self) -> OsirionClient:
         return self._client
 
+    @property
+    def last_tournament_sync(self) -> datetime | None:
+        return self._last_tournament_sync
+
     def start(self) -> None:
         if self._started:
             return
@@ -280,7 +284,11 @@ class PollScheduler:
     async def _cycle(self) -> None:
         async with self._lock:
             await self._maybe_sync_tournaments()
-            live, recently_ended = await self._fetch_window_targets()
+            try:
+                live, recently_ended = await self._fetch_window_targets()
+            except Exception:
+                logger.exception("Failed to fetch window targets; skipping enqueue this cycle")
+                live, recently_ended = [], []
             self._enqueue_live_jobs(live)
             self._enqueue_backfill_jobs(recently_ended)
             executed = await self._drain_queue()
@@ -294,10 +302,15 @@ class PollScheduler:
                 )
 
     async def _log_rate(self) -> None:
-        now = time.monotonic()
-        self._lb_request_times = [t for t in self._lb_request_times if now - t < 60]
-        count = len(self._lb_request_times)
-        logger.info("Leaderboard requests last minute: %d (ceiling 54)", count)
+        stats = self._client.rate_limit_stats()
+        for bucket, values in stats.items():
+            logger.info(
+                "Rate limit %s: %d/%d (utilization=%.1f%%)",
+                bucket,
+                values["count"],
+                values["ceiling"],
+                float(values["utilization"]) * 100,
+            )
 
     async def run_cycle_once(self) -> int:
         """Manual/test hook: run a single scheduler cycle."""

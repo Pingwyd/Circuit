@@ -1,9 +1,12 @@
 import asyncio
+import logging
 import time
 
 import httpx
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
@@ -13,6 +16,15 @@ class RateLimiter:
         self.capacity = int(max_per_min * 0.9)  # 90% ceiling
         self._hits: list[float] = []
         self._lock = asyncio.Lock()
+
+    def count_in_window(self) -> int:
+        now = time.monotonic()
+        return len([t for t in self._hits if now - t < 60])
+
+    def utilization(self) -> float:
+        if self.capacity == 0:
+            return 0.0
+        return self.count_in_window() / self.capacity
 
     async def acquire(self) -> None:
         async with self._lock:
@@ -41,14 +53,52 @@ class OsirionClient:
             "default": RateLimiter(100),
         }
 
+    def rate_limit_stats(self) -> dict[str, dict[str, float | int]]:
+        return {
+            bucket: {
+                "count": limiter.count_in_window(),
+                "ceiling": limiter.capacity,
+                "utilization": round(limiter.utilization(), 4),
+            }
+            for bucket, limiter in self._rl.items()
+        }
+
     async def _get(self, path: str, cls: str, params: dict | None = None):
-        await self._rl[cls].acquire()
+        limiter = self._rl[cls]
+        await limiter.acquire()
+        page = params.get("page") if params else None
         for attempt in range(3):
+            started = time.monotonic()
             try:
                 r = await self._c.get(path, params=params)
+                latency_ms = (time.monotonic() - started) * 1000
                 r.raise_for_status()
+                logger.info(
+                    "osirion_call endpoint=%s bucket=%s page=%s latency_ms=%.1f "
+                    "bucket_count=%d bucket_ceiling=%d attempt=%d",
+                    path,
+                    cls,
+                    page,
+                    latency_ms,
+                    limiter.count_in_window(),
+                    limiter.capacity,
+                    attempt + 1,
+                )
                 return r.json()
-            except (httpx.TimeoutException, httpx.HTTPStatusError):
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                latency_ms = (time.monotonic() - started) * 1000
+                logger.warning(
+                    "osirion_call_failed endpoint=%s bucket=%s page=%s latency_ms=%.1f "
+                    "bucket_count=%d bucket_ceiling=%d attempt=%d error=%s",
+                    path,
+                    cls,
+                    page,
+                    latency_ms,
+                    limiter.count_in_window(),
+                    limiter.capacity,
+                    attempt + 1,
+                    type(exc).__name__,
+                )
                 if attempt == 2:
                     raise
                 await asyncio.sleep(2**attempt)
