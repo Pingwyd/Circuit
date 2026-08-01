@@ -170,3 +170,27 @@ class OsirionClient:
         if platform: params["platform"] = platform
         return await self._get("/v1/accounts/lookup-by-display-name", "account", params)
 ```
+
+---
+
+## 5. Priority scheduler
+
+Reference implementation for `app/scheduler.py`. Orchestrates tiered leaderboard polling via P4 `poll_leaderboard`.
+
+### Loop (every 15s)
+
+1. Refresh tournament catalog when stale (>6h) via `sync_tournaments`.
+2. Query live windows (`begin_time <= now <= end_time`) and recently ended windows (`end_time` within last 10 minutes).
+3. Enqueue due jobs by tier:
+   - **HIGH** (priority 0): pages 0-9 of each live main score location, target 60-90s cadence (base 75s, stretches under queue pressure).
+   - **LOW** (priority 1): pages >= 10 when `total_pages` is known, every 5 minutes.
+   - **BACKFILL** (priority 2): all pages once per recently closed main window, then never again.
+4. Drain the priority queue: each job calls `poll_leaderboard` through the shared `OsirionClient` (leaderboard limiter at 54/min). One failure logs and the cycle continues.
+
+### On-demand
+
+`enqueue_deep_page(lb_event_id, lb_window_id, page)` inserts a HIGH-priority job for API-driven deep fetches (P6).
+
+### Rate logging
+
+Every 60s, log leaderboard request count in the rolling window (must stay at or under 54).
