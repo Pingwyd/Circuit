@@ -194,3 +194,32 @@ Reference implementation for `app/scheduler.py`. Orchestrates tiered leaderboard
 ### Rate logging
 
 Every 60s, log leaderboard request count in the rolling window (must stay at or under 54).
+
+---
+
+## 6. Read API
+
+FastAPI endpoints reading from Postgres. Response JSON uses camelCase field names.
+
+### `GET /tournaments?region=&live=`
+
+List tournaments with optional filters. `isLive` is true when any window has `begin_time <= now <= end_time`.
+
+### `GET /tournaments/{event_id}`
+
+Tournament detail with nested `eventWindows` and `scoreLocations`. Returns 404 when missing.
+
+### `GET /leaderboard/{lb_event_id}/{lb_window_id}?page=0`
+
+Serves rows from `leaderboard_current` for the requested page (100 ranks per page).
+
+- **Cached** (snapshot exists for this page): **200** with `status: "ready"` and entries.
+- **Uncached**: enqueue via `enqueue_deep_page` (P5), return **202** with `status: "loading"`. Never call Osirion inline.
+
+### `GET /players/search?name=`
+
+Search `players` by username prefix. Falls back to `lookup_by_name` through the adapter when the DB has no match.
+
+### `GET /players/{account_id}/placements`
+
+Cross-tournament placement history from `leaderboard_entry_players`.

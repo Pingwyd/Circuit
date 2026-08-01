@@ -5,6 +5,8 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.db import check_database_connection, engine
+from app.deps import close_osirion_client
+from app.routers import leaderboards, players, tournaments
 from app.scheduler import get_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -20,10 +22,15 @@ async def lifespan(app: FastAPI):
     yield
     if settings.scheduler_enabled:
         await scheduler.stop()
+    await close_osirion_client()
     await engine.dispose()
 
 
 app = FastAPI(title="Tournament Tracker", lifespan=lifespan)
+
+app.include_router(tournaments.router)
+app.include_router(leaderboards.router)
+app.include_router(players.router)
 
 
 @app.get("/health")
